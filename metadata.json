@@ -1,0 +1,5 @@
+{
+  "name": "Test to Impress",
+  "description": "A virtual try-on application that uses AI to dress a model in your selected fashion items. Choose from various categories, see the result on different poses, and find your perfect outfit.",
+  "requestFramePermissions": []
+}
