@@ -6,6 +6,8 @@ export interface ClothingItem {
   name: string;
   category: ClothingCategory;
   imageUrl: string;
+  price: number;
+  checkoutUrl: string;
 }
 
 export interface PlacedItemData {
@@ -15,6 +17,8 @@ export interface PlacedItemData {
   imageUrl: string;
   processedImageUrl: string; // With background removed
   category: ClothingCategory;
+  price: number;
+  checkoutUrl: string;
   x: number;
   y: number;
   width: number;

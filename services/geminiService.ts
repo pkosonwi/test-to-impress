@@ -36,7 +36,7 @@ export const generateOutfitOnModel = async (compositeImageBase64: string): Promi
 
 **Input Image Analysis:**
 - The provided image is a composite. It consists of a base photograph of a model.
-- On top of this base, one or more clothing items have been placed as separate layers. These clothing items have transparent backgrounds.
+- On top of this base, one or more clothing items have been placed as separate layers. **Crucially, these clothing items may have solid-colored backgrounds (like a white square). Your first step is to perfectly remove this background, treating only the clothing item itself as the object to be placed on the model.**
 
 **Your Task - Step-by-step Instructions:**
 1.  **Seamless Integration:** Your primary task is to seamlessly integrate **EVERY SINGLE** overlaid clothing item onto the model. The clothes must look like they are actually being worn, draping naturally over the model's body according to the pose and posture, while respecting the item's original style.
