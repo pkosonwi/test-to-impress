@@ -1,5 +1,5 @@
 {
   "name": "Test to Impress",
-  "description": "A virtual try-on application that uses AI to dress a model in your selected fashion items. Choose from various categories, see the result on different poses, and find your perfect outfit.",
+  "description": "Stop guessing, start styling. Our AI-powered Virtual Wardrobe lets you try on real clothes from top brands on a photorealistic model. See how fabrics drape, colors pop, and styles fit—all before you add to cart. Your personal fitting room is here.",
   "requestFramePermissions": []
 }

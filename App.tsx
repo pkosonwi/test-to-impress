@@ -2,11 +2,11 @@ import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { ClothingSelector } from './components/ClothingSelector';
 import { ModelViewer } from './components/ModelViewer';
 import { Header } from './components/Header';
-import { clothingData } from './data/clothing';
-import { BASE_MODEL_URLS, CLOTHING_CATEGORIES } from './constants';
+import { fetchClothingData } from './services/clothingService';
+import { LIGHT_SKIN_MODEL_URLS, DARK_SKIN_MODEL_URLS, CLOTHING_CATEGORIES } from './constants';
 import { imageUrlToBase64 } from './utils/imageHelper';
 import { generateOutfitOnModel } from './services/geminiService';
-import type { ClothingItem, PlacedItemData } from './types';
+import type { ClothingItem, PlacedItemData, SkinTone } from './types';
 import { XIcon, OutfitIcon, ChevronUpIcon, ChevronDownIcon, ExternalLinkIcon } from './components/icons';
 
 // History state types for undo/redo
@@ -20,7 +20,7 @@ interface PostApplyHistoryState {
 
 type ControlTab = 'wardrobe' | 'outfit';
 
-const INACTIVITY_TIMEOUT = 2500; // 2.5 seconds
+const INACTIVITY_TIMEOUT = 5000; // 2.5 seconds
 
 // Animate price changes
 const AnimatedPrice: React.FC<{ value: number }> = ({ value }) => {
@@ -156,10 +156,18 @@ const CheckoutModal: React.FC<{
 
 
 const App: React.FC = () => {
-  const [modelImages, setModelImages] = useState<string[]>(BASE_MODEL_URLS);
+  const [clothingData, setClothingData] = useState<ClothingItem[]>([]);
+  const [skinTone, setSkinTone] = useState<SkinTone>('light');
+  const [initialModelObjectUrls, setInitialModelObjectUrls] = useState<string[]>([]);
+  const modelUrls = useMemo(() => {
+    return skinTone === 'light' ? LIGHT_SKIN_MODEL_URLS : DARK_SKIN_MODEL_URLS;
+  }, [skinTone]);
+
+  const [modelImages, setModelImages] = useState<string[]>(() => new Array(modelUrls.length).fill(''));
   const [currentPoseIndex, setCurrentPoseIndex] = useState<number>(0);
   const [placedItems, setPlacedItems] = useState<PlacedItemData[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isCatalogLoading, setIsCatalogLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [isOutfitFinalized, setIsOutfitFinalized] = useState<boolean>(false);
   const [isItemBeingDragged, setIsItemBeingDragged] = useState<boolean>(false);
@@ -175,6 +183,87 @@ const App: React.FC = () => {
 
   const processedImageCache = useRef<Record<string, string>>({});
   const inactivityTimerRef = useRef<number | null>(null);
+
+  const { minPrice, maxPrice } = useMemo(() => {
+    if (clothingData.length === 0) {
+        return { minPrice: 0, maxPrice: 100 };
+    }
+    const prices = clothingData.map(item => item.price);
+    return {
+        minPrice: Math.floor(Math.min(...prices)),
+        maxPrice: Math.ceil(Math.max(...prices)),
+    };
+  }, [clothingData]);
+
+  const [priceRange, setPriceRange] = useState({ min: minPrice, max: maxPrice });
+
+  // This effect will reset the slider when the underlying min/max changes
+  useEffect(() => {
+    setPriceRange({ min: minPrice, max: maxPrice });
+  }, [minPrice, maxPrice]);
+
+  // Fetch clothing catalog from Supabase on startup
+  useEffect(() => {
+    const loadCatalog = async () => {
+        try {
+            setError(null);
+            setIsCatalogLoading(true);
+            const data = await fetchClothingData();
+            setClothingData(data);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Could not load clothing catalog.");
+        } finally {
+            setIsCatalogLoading(false);
+        }
+    };
+    loadCatalog();
+  }, []);
+
+
+  // Pre-load base model images on startup and when skin tone changes
+    useEffect(() => {
+        let isMounted = true;
+        
+        const loadModels = async () => {
+            try {
+                // Clear existing images to show loading state
+                setModelImages(new Array(modelUrls.length).fill('')); 
+                
+                const objectUrls = await Promise.all(
+                    modelUrls.map(async (url) => {
+                        const response = await fetch(url);
+                        if (!response.ok) throw new Error(`Failed to fetch ${url}`);
+                        const blob = await response.blob();
+                        return URL.createObjectURL(blob);
+                    })
+                );
+
+                if (isMounted) {
+                    setInitialModelObjectUrls(prevUrls => {
+                        // Revoke previously loaded URLs
+                        prevUrls.forEach(url => URL.revokeObjectURL(url));
+                        return objectUrls;
+                    });
+                    setModelImages(objectUrls);
+                    setCurrentPoseIndex(0);
+                } else {
+                    // component unmounted while loading, so cleanup the newly created urls
+                    objectUrls.forEach(url => URL.revokeObjectURL(url));
+                }
+            } catch (err) {
+                if (isMounted) {
+                    setError(err instanceof Error ? err.message : "Failed to load model images.");
+                    console.error(err);
+                }
+            }
+        };
+        
+        loadModels();
+
+        return () => {
+            isMounted = false;
+        };
+    }, [modelUrls]);
   
   // A callback to reset the inactivity timer. This is the core of the auto-pose-change feature.
   // It's memoized with useCallback to prevent re-creation on every render.
@@ -214,13 +303,27 @@ const App: React.FC = () => {
 
 
   const handleBackToStart = useCallback(() => {
-    setModelImages(BASE_MODEL_URLS);
+    setModelImages(initialModelObjectUrls);
     setPlacedItems([]);
     setIsOutfitFinalized(false);
     setPreApplyState(null);
     setPostApplyState(null);
     setCurrentPoseIndex(0);
-  }, []);
+  }, [initialModelObjectUrls]);
+  
+  const handleSkinToneChange = useCallback((newTone: SkinTone) => {
+    if (newTone === skinTone) return;
+
+    // If outfit is finalized or items are placed, changing skin tone should reset the state.
+    if (isOutfitFinalized || placedItems.length > 0) {
+        setPlacedItems([]);
+        setIsOutfitFinalized(false);
+        setPreApplyState(null);
+        setPostApplyState(null);
+    }
+    setSkinTone(newTone);
+  }, [skinTone, isOutfitFinalized, placedItems.length]);
+
 
   const handleGoToCheckout = useCallback(() => {
     setActiveControlTab('outfit');
@@ -248,6 +351,7 @@ const App: React.FC = () => {
       setPostApplyState(null);
       if (isOutfitFinalized) {
           setIsOutfitFinalized(false);
+          setModelImages(initialModelObjectUrls);
       }
   };
   
@@ -318,7 +422,7 @@ const App: React.FC = () => {
         // Return the list of other items plus the new/replacement item.
         return [...otherItems, newItem];
     });
-  }, [isOutfitFinalized, resetInactivityTimer]);
+  }, [isOutfitFinalized, resetInactivityTimer, initialModelObjectUrls]);
 
   const handleAddItem = useCallback((item: ClothingItem) => {
     addPlacedItem(item);
@@ -332,13 +436,13 @@ const App: React.FC = () => {
     resetInactivityTimer();
     handleOutfitChange();
     setPlacedItems(prev => prev.map(p => p.id === updatedItem.id ? updatedItem : p));
-  }, [isOutfitFinalized, resetInactivityTimer]);
+  }, [isOutfitFinalized, resetInactivityTimer, initialModelObjectUrls]);
   
   const handleRemovePlacedItem = useCallback((id: string) => {
     resetInactivityTimer();
     handleOutfitChange();
     setPlacedItems(prev => prev.filter(p => p.id !== id));
-  }, [isOutfitFinalized, resetInactivityTimer]);
+  }, [isOutfitFinalized, resetInactivityTimer, initialModelObjectUrls]);
 
   const handleNextPose = () => {
     setCurrentPoseIndex(p => (p + 1) % modelImages.length);
@@ -359,23 +463,33 @@ const App: React.FC = () => {
         return;
     }
     
-    setPreApplyState({ modelImages, placedItems });
+    setPreApplyState({ modelImages: initialModelObjectUrls, placedItems });
     setPostApplyState(null);
     setIsLoading(true);
     setError(null);
     
     try {
-        const generationPromises = BASE_MODEL_URLS.map(async (modelUrl) => {
+        const generationPromises = modelUrls.map(async (modelUrl) => {
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             if (!ctx) throw new Error("Canvas is not supported.");
 
             const modelImage = new Image();
-            modelImage.crossOrigin = 'Anonymous';
+            const response = await fetch(modelUrl);
+            if (!response.ok) throw new Error(`Failed to fetch model image: ${modelUrl}`);
+            const blob = await response.blob();
+            const objectUrl = URL.createObjectURL(blob);
+
             await new Promise<void>((resolve, reject) => {
-                modelImage.onload = () => resolve();
-                modelImage.onerror = () => reject(new Error("Failed to load base model image for composition."));
-                modelImage.src = `https://corsproxy.io/?${encodeURIComponent(modelUrl)}`;
+                modelImage.onload = () => {
+                    URL.revokeObjectURL(objectUrl);
+                    resolve();
+                };
+                modelImage.onerror = () => {
+                    URL.revokeObjectURL(objectUrl);
+                    reject(new Error("Failed to load base model image for composition."));
+                };
+                modelImage.src = objectUrl;
             });
 
             canvas.width = modelImage.naturalWidth;
@@ -415,7 +529,7 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [placedItems, modelImages]);
+  }, [placedItems, initialModelObjectUrls, modelUrls]);
 
   const handleUndo = () => {
     if (preApplyState) {
@@ -464,6 +578,8 @@ const App: React.FC = () => {
               onInteraction={resetInactivityTimer}
               isItemBeingDragged={isItemBeingDragged}
               onItemDragEnd={() => setIsItemBeingDragged(false)}
+              skinTone={skinTone}
+              onSkinToneChange={handleSkinToneChange}
             />
         </div>
         
@@ -524,11 +640,16 @@ const App: React.FC = () => {
                           placedItemIds={placedItemIds}
                           onItemSelect={handleAddItem}
                           isLoading={isLoading}
+                          isCatalogLoading={isCatalogLoading}
                           isOutfitFinalized={isOutfitFinalized}
                           onBackToStart={handleBackToStart}
                           onGoToCheckout={handleGoToCheckout}
                           onItemDragStart={() => setIsItemBeingDragged(true)}
                           onItemDragEnd={() => setIsItemBeingDragged(false)}
+                          priceRange={priceRange}
+                          onPriceRangeChange={setPriceRange}
+                          minPrice={minPrice}
+                          maxPrice={maxPrice}
                       />
                   ) : (
                       <div className="h-full flex flex-col">

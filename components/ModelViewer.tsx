@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { ChevronLeftIcon, ChevronRightIcon, SparklesIcon, XIcon, UndoIcon, RedoIcon } from './icons';
-import type { PlacedItemData, ClothingItem } from '../types';
+import { ChevronLeftIcon, ChevronRightIcon, SparklesIcon, XIcon, UndoIcon, RedoIcon, CheckIcon } from './icons';
+import type { PlacedItemData, ClothingItem, SkinTone } from '../types';
+import { SKIN_TONE_OPTIONS } from '../constants';
 
 interface PlacedItemProps {
   item: PlacedItemData;
@@ -177,6 +178,8 @@ interface ModelViewerProps {
   onInteraction: () => void;
   isItemBeingDragged: boolean;
   onItemDragEnd: () => void;
+  skinTone: SkinTone;
+  onSkinToneChange: (tone: SkinTone) => void;
 }
 
 const loadingMessages = [
@@ -195,7 +198,7 @@ const LoadingSpinner: React.FC = () => (
     </svg>
 );
 
-export const ModelViewer: React.FC<ModelViewerProps> = ({ images, currentPoseIndex, onNextPose, onPrevPose, onApply, isLoading, error, onErrorClear, placedItems, onUpdatePlacedItem, onRemovePlacedItem, onUndo, onRedo, canUndo, canRedo, onItemDrop, isOutfitFinalized, onInteraction, isItemBeingDragged, onItemDragEnd }) => {
+export const ModelViewer: React.FC<ModelViewerProps> = ({ images, currentPoseIndex, onNextPose, onPrevPose, onApply, isLoading, error, onErrorClear, placedItems, onUpdatePlacedItem, onRemovePlacedItem, onUndo, onRedo, canUndo, canRedo, onItemDrop, isOutfitFinalized, onInteraction, isItemBeingDragged, onItemDragEnd, skinTone, onSkinToneChange }) => {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [animationClass, setAnimationClass] = useState('animate-[fadeIn_0.5s_ease-in-out]');
@@ -273,6 +276,8 @@ export const ModelViewer: React.FC<ModelViewerProps> = ({ images, currentPoseInd
           console.error("Failed to handle drop:", err);
       }
   };
+  
+  const currentImageSrc = images[currentPoseIndex];
 
   return (
     <div className="relative w-full h-full flex flex-col items-center justify-center p-2 lg:p-4">
@@ -314,8 +319,30 @@ export const ModelViewer: React.FC<ModelViewerProps> = ({ images, currentPoseInd
                 )}
             </div>
 
-            {/* Action Buttons */}
+            {/* Action Buttons & Skin Tone */}
             <div className="absolute top-4 left-4 z-20 flex flex-col space-y-3">
+                <div className="bg-white/90 p-1 rounded-full shadow-md flex items-center space-x-1 self-start">
+                    {SKIN_TONE_OPTIONS.map((option) => (
+                        <button
+                            key={option.id}
+                            onClick={() => onSkinToneChange(option.id)}
+                            disabled={isOutfitFinalized}
+                            className={`w-8 h-8 rounded-full border-2 transition-all duration-200 focus:outline-none ${
+                                skinTone === option.id 
+                                ? 'border-neutral-700 scale-110 ring-2 ring-white' 
+                                : 'border-transparent hover:scale-110 hover:border-neutral-400'
+                            } disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:border-transparent`}
+                            style={{ backgroundColor: option.color }}
+                            aria-label={`Select ${option.name} skin tone`}
+                        >
+                            {skinTone === option.id && (
+                                <div className="w-full h-full flex items-center justify-center bg-black/20 rounded-full">
+                                    <CheckIcon className="w-4 h-4 text-white" />
+                                </div>
+                            )}
+                        </button>
+                    ))}
+                </div>
                 {canUndo && (
                     <button
                         onClick={onUndo}
@@ -336,13 +363,17 @@ export const ModelViewer: React.FC<ModelViewerProps> = ({ images, currentPoseInd
                     </button>
                 )}
             </div>
-
-            <img 
-                key={currentPoseIndex} // Force re-render on image change for animation
-                src={images[currentPoseIndex]} 
-                alt={`AI model pose ${currentPoseIndex + 1}`} 
-                className={`w-full h-full object-contain mix-blend-multiply ${animationClass}`}
-            />
+            
+            {currentImageSrc ? (
+                <img 
+                    key={currentPoseIndex + currentImageSrc} // Force re-render on image change for animation
+                    src={currentImageSrc} 
+                    alt={`AI model pose ${currentPoseIndex + 1}`} 
+                    className={`w-full h-full object-contain mix-blend-multiply ${animationClass}`}
+                />
+            ) : (
+                <div className="w-full h-full bg-neutral-200/80 animate-pulse" />
+            )}
 
             {/* Render Placed Items - only when not finalized */}
             <div className="absolute inset-0">
@@ -362,12 +393,13 @@ export const ModelViewer: React.FC<ModelViewerProps> = ({ images, currentPoseInd
 
             {/* Floating "Try On" Button */}
             {placedItems.length > 0 && !isOutfitFinalized && (
-                <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-20 animate-[fadeIn_0.3s_ease-out]">
+                <div className="absolute top-8 left-1/2 -translate-x-1/2 z-20 animate-[fadeIn_0.3s_ease-out]">
                     <button
                         onClick={onApply}
                         disabled={isLoading}
-                        className="flex items-center justify-center px-6 py-3 bg-neutral-800 text-white rounded-xl text-base font-semibold hover:bg-neutral-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-neutral-500 disabled:bg-neutral-500 disabled:cursor-wait disabled:transform-none"
+                        className="flex items-center justify-center px-5 py-2.5 bg-neutral-800 text-white rounded-xl text-sm font-semibold hover:bg-neutral-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-neutral-500 disabled:bg-neutral-500 disabled:cursor-wait disabled:transform-none"
                     >
+                        {!isLoading && <SparklesIcon className="w-5 h-5 mr-2 -ml-1" />}
                         {isLoading ? 'Creating...' : 'Try On'}
                     </button>
                 </div>

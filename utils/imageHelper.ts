@@ -1,17 +1,10 @@
 
 /**
  * Converts an image URL to a Base64 encoded string.
- * Note: This function can fail due to CORS (Cross-Origin Resource Sharing) policies
- * if the image is hosted on a server that doesn't allow requests from the app's origin.
- * For production, ensure images are served with appropriate CORS headers.
- * A server-side proxy is a common solution to bypass this client-side limitation.
  */
 export const imageUrlToBase64 = async (url: string): Promise<string> => {
   try {
-    // The previous CORS proxy was unreliable. Switching to corsproxy.io.
-    // Public proxies can be flaky; a dedicated server-side proxy is best for production.
-    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
-    const response = await fetch(proxyUrl);
+    const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }

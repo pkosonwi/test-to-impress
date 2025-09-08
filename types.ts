@@ -25,3 +25,11 @@ export interface PlacedItemData {
   height: number;
   zIndex: number;
 }
+
+export type SkinTone = 'light' | 'dark';
+
+export interface SkinToneOption {
+  id: SkinTone;
+  name: string;
+  color: string;
+}
